@@ -19,7 +19,8 @@ class ReplayMemory:
     self.batch_size = config.batch_size
     self.count = 0
     self.current = 0
-    self.worst_reward = None;
+    self.worst_reward = None
+    self.best_reward = None
 
     self.prestates = np.empty((self.batch_size, self.history_length) + self.dims, dtype = np.float16)
     self.poststates = np.empty((self.batch_size, self.history_length) + self.dims, dtype = np.float16)
@@ -45,15 +46,17 @@ class ReplayMemory:
 
   def sample(self):
     
-    if self.worst_reward == None:
+    if self.worst_reward == None and self.best_reward == None:
       self.worst_reward = np.amin(self.rewards)
-      print('Worst reward', self.worst_reward)
+      self.best_reward = np.amax(self.rewards)
+
+    chosen = random.randint(self.worst_reward, self.best_reward)
 
     index = random.randint(self.history_length, self.count - self.batch_size)
 
     for i in xrange(self.batch_size / self.history_length):
 
-      if self.rewards[index] <= self.worst_reward:
+      if self.rewards[index] == chosen:
         break
 
       index = random.randint(self.batch_size, self.count - self.batch_size)
@@ -74,6 +77,30 @@ class ReplayMemory:
     terminals = self.terminals[indexes]
 
     return np.transpose(self.prestates, (0, 2, 3, 1)), actions, rewards, np.transpose(self.poststates, (0, 2, 3, 1)), terminals
+
+    # indexes = []
+    # while len(indexes) < self.batch_size:
+      
+    #   while True:
+        
+    #     index = random.randint(self.history_length, self.count - 1)
+        
+    #     if index >= self.current and index - self.history_length < self.current:
+    #       continue
+        
+    #     if self.terminals[(index - self.history_length):index].any():
+    #       continue
+    #     break
+      
+    #   self.prestates[len(indexes), ...] = self.getState(index - 1)
+    #   self.poststates[len(indexes), ...] = self.getState(index)
+    #   indexes.append(index)
+
+    # actions = self.actions[indexes]
+    # rewards = self.rewards[indexes]
+    # terminals = self.terminals[indexes]
+
+    # return np.transpose(self.prestates, (0, 2, 3, 1)), actions, rewards, np.transpose(self.poststates, (0, 2, 3, 1)), terminals
 
   def save(self):
     for idx, (name, array) in enumerate(
