@@ -8,16 +8,14 @@ from config import get_config
 flags = tf.app.flags
 
 flags.DEFINE_string('env_name', 'Breakout-v0', 'The name of gym environment to use')
-flags.DEFINE_integer('action_repeat', 4, 'The number of action to be repeated')
 
 flags.DEFINE_boolean('display', False, 'Whether to do display the game screen or not')
 flags.DEFINE_boolean('is_train', True, 'Whether to do training or testing')
-flags.DEFINE_integer('random_seed', 54321, 'Value of random seed')
 
 FLAGS = flags.FLAGS
 
-tf.set_random_seed(FLAGS.random_seed)
-random.seed(FLAGS.random_seed)
+tf.set_random_seed(54321)
+random.seed(54321)
 
 def main(_):
 

@@ -41,7 +41,7 @@ class AgentConfig(object):
 
   backend = 'tf'
   env_type = 'detail'
-  action_repeat = 1
+  action_repeat = 4
 
   model = ''
 
