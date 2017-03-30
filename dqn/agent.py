@@ -7,7 +7,6 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 
 from .base import BaseModel
-from .history import History
 from .replay_memory import ReplayMemory, History
 from utils import get_time, save_pkl, load_pkl, linear, conv2d, clipped_error
 
