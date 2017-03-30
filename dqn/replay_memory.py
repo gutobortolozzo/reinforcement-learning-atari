@@ -75,30 +75,6 @@ class ReplayMemory:
 
     return np.transpose(self.prestates, (0, 2, 3, 1)), actions, rewards, np.transpose(self.poststates, (0, 2, 3, 1)), terminals
 
-    # indexes = []
-    # while len(indexes) < self.batch_size:
-      
-    #   while True:
-        
-    #     index = random.randint(self.history_length, self.count - 1)
-        
-    #     if index >= self.current and index - self.history_length < self.current:
-    #       continue
-        
-    #     if self.terminals[(index - self.history_length):index].any():
-    #       continue
-    #     break
-      
-    #   self.prestates[len(indexes), ...] = self.getState(index - 1)
-    #   self.poststates[len(indexes), ...] = self.getState(index)
-    #   indexes.append(index)
-
-    # actions = self.actions[indexes]
-    # rewards = self.rewards[indexes]
-    # terminals = self.terminals[indexes]
-
-    # return np.transpose(self.prestates, (0, 2, 3, 1)), actions, rewards, np.transpose(self.poststates, (0, 2, 3, 1)), terminals
-
   def save(self):
     for idx, (name, array) in enumerate(
         zip(['actions', 'rewards', 'screens', 'terminals', 'prestates', 'poststates'],
