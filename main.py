@@ -14,8 +14,8 @@ flags.DEFINE_boolean('is_train', True, 'Whether to do training or testing')
 
 FLAGS = flags.FLAGS
 
-tf.set_random_seed(54321)
-random.seed(54321)
+tf.set_random_seed(123)
+random.seed(123)
 
 def main(_):
 

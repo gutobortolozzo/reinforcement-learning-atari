@@ -81,27 +81,26 @@ class Agent(BaseModel):
       tqdm_range.set_postfix(avg_reward=avg_reward, avg_loss=avg_loss, avg_q=avg_q, num_game=num_game, \
           max_ep_reward=max_ep_reward, min_ep_reward=min_ep_reward, avg_ep_reward=avg_ep_reward, epsilon=self.epsilon)
 
-      if self.step >= self.learn_start and self.step % self.test_step == self.test_step - 1:
+      if self.step >= self.learn_start and self.step % self.test_step == 0:
         
         if max_avg_ep_reward * 0.9 <= avg_ep_reward:
-          self.step_assign_op.eval({self.step_input: self.step + 1})
+          self.step_assign_op.eval({ self.step_input: self.step + 1 })
           self.save_model(self.step + 1)
 
           max_avg_ep_reward = max(max_avg_ep_reward, avg_ep_reward)
 
-        if self.step > 180:
-          self.inject_summary({
-              'average.reward': avg_reward,
-              'average.loss': avg_loss,
-              'average.q': avg_q,
-              'episode.max_reward': max_ep_reward,
-              'episode.min_reward': min_ep_reward,
-              'episode.avg_reward': avg_ep_reward,
-              'episode.num_of_game': num_game,
-              'episode.rewards': ep_rewards,
-              'episode.actions': actions,
-              'training.learning_rate': self.learning_rate_op.eval({ self.learning_rate_step: self.step }),
-            }, self.step)
+        self.inject_summary({
+            'average.reward': avg_reward,
+            'average.loss': avg_loss,
+            'average.q': avg_q,
+            'episode.max_reward': max_ep_reward,
+            'episode.min_reward': min_ep_reward,
+            'episode.avg_reward': avg_ep_reward,
+            'episode.num_of_game': num_game,
+            'episode.rewards': ep_rewards,
+            'episode.actions': actions,
+            'training.learning_rate': self.learning_rate_op.eval({ self.learning_rate_step: self.step }),
+          }, self.step)
 
         num_game = 0
         total_reward = 0.
@@ -123,7 +122,7 @@ class Agent(BaseModel):
         # self.train_length: 1,
         # self.images_batch_size: 1
       })
-      action = np.argmax(actions)
+      action = actions[0]
 
     return action
 
@@ -137,7 +136,7 @@ class Agent(BaseModel):
       if self.step % self.train_frequency == 0:
         self.q_learning_mini_batch()
 
-      if self.step % self.target_q_update_step == self.target_q_update_step - 1:
+      if self.step % self.target_q_update_step == 0:
         self.update_target_q_network()
 
   def q_learning_mini_batch(self):
@@ -297,8 +296,8 @@ class Agent(BaseModel):
       exponential_decay = tf.train.exponential_decay(self.learning_rate, self.learning_rate_step, self.learning_rate_decay_step, self.learning_rate_decay, staircase=True)
       self.learning_rate_op = tf.maximum(self.learning_rate_minimum, exponential_decay, name='learning_rate_exponential_decay')
 
-      self.optim = tf.train.RMSPropOptimizer(self.learning_rate_op, momentum=0.95, epsilon=0.01).minimize(self.loss)
-      # self.optim = tf.train.AdamOptimizer(self.learning_rate_op, epsilon=0.01, name='Adam_optim').minimize(self.loss)
+      # self.optim = tf.train.RMSPropOptimizer(self.learning_rate_op, momentum=0.95, epsilon=0.01).minimize(self.loss)
+      self.optim = tf.train.AdamOptimizer(self.learning_rate_op, epsilon=0.01, name='Adam_optim').minimize(self.loss)
 
     with tf.variable_scope('summary'):
       scalar_summary_tags = ['average.reward', 'average.loss', 'average.q', 'episode.max_reward', 'episode.min_reward', 'episode.avg_reward', 'episode.num_of_game', 'training.learning_rate']
@@ -326,6 +325,7 @@ class Agent(BaseModel):
     self.update_target_q_network()
 
   def update_target_q_network(self):
+    print('[*] Updating target network...')
     for name in self.w.keys():
       self.t_w_assign_op[name].eval({self.t_w_input[name]: self.w[name].eval()})
 

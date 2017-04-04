@@ -6,6 +6,10 @@ import numpy as np
 from utils import save_npy, load_npy
 
 class ReplayMemory:
+
+  e = 0.01
+  a = 0.6
+
   def __init__(self, config, model_dir):
     self.model_dir = model_dir
 
@@ -44,6 +48,9 @@ class ReplayMemory:
       indexes = [(index - i) % self.count for i in reversed(range(self.history_length))]
       return self.screens[indexes, ...]
 
+  def _getPriority(self, error):
+    return (abs(error) + self.e) ** self.a
+
   def sample(self):
     
     if self.worst_reward == None and self.best_reward == None:
@@ -52,7 +59,12 @@ class ReplayMemory:
 
     chosen = random.randint(self.worst_reward, self.best_reward)
 
-    index = random.randint(self.history_length, self.count - self.batch_size)
+    count = self.count
+
+    if count <= self.batch_size * self.history_length:
+      count = 1000
+
+    index = random.randint(self.history_length, count - self.batch_size)
 
     for i in xrange(self.batch_size / self.history_length):
 
