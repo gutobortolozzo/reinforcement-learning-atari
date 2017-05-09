@@ -8,8 +8,9 @@ class Environment(object):
   def __init__(self, config):
     self.env = gym.make(config.env_name)
 
-    # self.gym_dir = '/tmp/%s-%s' % (config.env_name, get_time()) # only to play in upload to openai-gym mode
-    # self.env = gym.wrappers.Monitor(self.env, self.gym_dir) # only to play in upload to openai-gym mode
+    if not config.is_train:
+      self.gym_dir = '/tmp/%s-%s' % (config.env_name, get_time())
+      self.env = gym.wrappers.Monitor(self.env, self.gym_dir)
 
     screen_width, screen_height, self.action_repeat, self.random_start = config.screen_width, config.screen_height, config.action_repeat, config.random_start
 
@@ -18,26 +19,26 @@ class Environment(object):
 
     self._screen = None
     self.reward = 0
-    self.terminal = True
+    self.terminal = False
 
-  def new_game(self, from_random_game=False):
-    if self.lives == 0:
+    self.env.reset()
+
+  def new_game(self):
+    if self.terminal:
       self._screen = self.env.reset()
-    self._step(0)
+    
+    self._random_step()
     self.render()
     return self.screen, 0, 0, self.terminal
 
   def new_random_game(self):
-    self.new_game(True)
+    self.new_game()
     for _ in xrange(random.randint(0, self.random_start - 1)):
-      self._step(0)
+      self._random_step()
     self.render()
     return self.screen, 0, 0, self.terminal
 
   def _step(self, action):
-    if not self.lives > 0:
-      return self._screen, 0, True, None
-
     self._screen, self.reward, self.terminal, _ = self.env.step(action)
 
   def _random_step(self):
@@ -53,11 +54,6 @@ class Environment(object):
     return self.env.action_space.n
 
   @property
-  def lives(self):
-    # return self.env.unwrapped.ale.lives() # only to play in upload to openai-gym mode
-    return self.env.ale.lives()
-
-  @property
   def state(self):
     return self.screen, self.reward, self.terminal
 
@@ -67,7 +63,7 @@ class Environment(object):
 
   def upload_game_session(self):
     self.env.close()
-    gym.upload(self.gym_dir, api_key='')
+    gym.upload(self.gym_dir, api_key='sk_QPoIOdCKR5qkSsJ9UeG0dA')
 
 class GymEnvironment(Environment):
   def __init__(self, config):
@@ -75,15 +71,13 @@ class GymEnvironment(Environment):
 
   def act(self, action, is_training=True):
     cumulated_reward = 0
-    start_lives = self.lives
 
     for _ in xrange(self.action_repeat):
       self._step(action)
       cumulated_reward = cumulated_reward + self.reward
 
-      if is_training and start_lives > self.lives:
+      if is_training and self.terminal:
         cumulated_reward -= 1
-        self.terminal = True
 
       if self.terminal:
         break

@@ -26,7 +26,7 @@ def main(_):
 
     agent = Agent(config, env, sess)
 
-    if FLAGS.is_train:
+    if config.is_train:
       agent.train()
     else:
       agent.play()

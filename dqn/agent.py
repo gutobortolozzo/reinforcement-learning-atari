@@ -21,6 +21,9 @@ class Agent(BaseModel):
     self.memory = ReplayMemory(self.config, self.model_dir)
     self.epsilon = 0
 
+    self.total_q = 0
+    self.total_target_q = 0
+
     with tf.variable_scope('step'):
       self.step_op = tf.Variable(0, trainable=False, name='step')
       self.step_input = tf.placeholder('int32', None, name='step_input')
@@ -83,12 +86,22 @@ class Agent(BaseModel):
 
       if self.step >= self.learn_start and self.step % self.test_step == 0:
         
-        if max_avg_ep_reward * 0.9 <= avg_ep_reward:
+        if max_avg_ep_reward * self.discount <= avg_ep_reward:
           self.step_assign_op.eval({ self.step_input: self.step + 1 })
           self.save_model(self.step + 1)
 
           max_avg_ep_reward = max(max_avg_ep_reward, avg_ep_reward)
 
+        num_game = 0
+        total_reward = 0.
+        self.total_loss = 0.
+        self.total_q = 0.
+        self.update_count = 0
+        ep_reward = 0.
+        ep_rewards = []
+        actions = []
+
+      if self.step >= self.learn_start and self.step % self.target_q_update_step == 0:
         self.inject_summary({
             'average.reward': avg_reward,
             'average.loss': avg_loss,
@@ -101,15 +114,6 @@ class Agent(BaseModel):
             'episode.actions': actions,
             'training.learning_rate': self.learning_rate_op.eval({ self.learning_rate_step: self.step }),
           }, self.step)
-
-        num_game = 0
-        total_reward = 0.
-        self.total_loss = 0.
-        self.total_q = 0.
-        self.update_count = 0
-        ep_reward = 0.
-        ep_rewards = []
-        actions = []
 
   def predict(self, s_t, test_ep=None):
     self.epsilon = test_ep or (self.ep_end + max(0., (self.ep_start - self.ep_end) * (self.ep_end_t - max(0., self.step - self.learn_start)) / self.ep_end_t))
@@ -126,11 +130,14 @@ class Agent(BaseModel):
 
     return action
 
+  def error(self):
+    return abs(self.total_target_q - self.total_q)
+
   def observe(self, screen, reward, action, terminal):
     reward = max(self.min_reward, min(self.max_reward, reward))
 
     self.history.add(screen)
-    self.memory.add(screen, reward, action, terminal)
+    self.memory.add(screen, reward, action, terminal, self.error())
 
     if self.step > self.learn_start:
       if self.step % self.train_frequency == 0:
@@ -143,7 +150,7 @@ class Agent(BaseModel):
     if self.memory.count < self.history_length:
       return
     else:
-      s_t, action, reward, s_t_plus_1, terminal = self.memory.sample()
+      s_t, action, reward, s_t_plus_1, terminal = self.memory.sample(self.error())
 
     pred_action = self.q_action.eval({
       self.s_t: s_t_plus_1
@@ -170,6 +177,7 @@ class Agent(BaseModel):
     self.writer.add_summary(summary_str, self.step)
     self.total_loss += loss
     self.total_q += q_t.mean()
+    self.total_target_q += target_q_t.mean()
     self.update_count += 1
 
   def build_dqn(self):
@@ -209,13 +217,17 @@ class Agent(BaseModel):
       # self.l4_flat = tf.reshape(self.rnn_predict_input, [-1, reduce(lambda x, y: x * y, shape[1:])])
 
       shape = self.l3.get_shape().as_list()
-      self.l4_flat = tf.reshape(self.l3, [-1, reduce(lambda x, y: x * y, shape[1:])])
+      self.l3_flat = tf.reshape(self.l3, [-1, reduce(lambda x, y: x * y, shape[1:])])
 
-      self.l4, self.w['l4_w'], self.w['l4_b'] = linear(self.l4_flat, 512, activation_fn=activation_fn, name='l4')
+      self.value_hid, self.w['l4_val_w'], self.w['l4_val_b'] = linear(self.l3_flat, 512, activation_fn=activation_fn, name='value_hid')
 
-      self.l5, self.w['l5_w'], self.w['l5_b'] = linear(self.l4, 512, activation_fn=activation_fn, name='l5')
+      self.adv_hid, self.w['l4_adv_w'], self.w['l4_adv_b'] = linear(self.l3_flat, 512, activation_fn=activation_fn, name='adv_hid')
 
-      self.q, self.w['q_w'], self.w['q_b'] = linear(self.l5, self.env.action_size, name='q')
+      self.value, self.w['val_w_out'], self.w['val_w_b'] = linear(self.value_hid, 1, name='value_out')
+
+      self.advantage, self.w['adv_w_out'], self.w['adv_w_b'] = linear(self.adv_hid, self.env.action_size, name='adv_out')
+
+      self.q = self.value + (self.advantage - tf.reduce_mean(self.advantage, reduction_indices=1, keep_dims=True))
 
       self.q_action = tf.argmax(self.q, dimension=1)
 
@@ -251,13 +263,18 @@ class Agent(BaseModel):
 
       # shape = self.rnn_target.get_shape().as_list()
       shape = self.target_l3.get_shape().as_list()
-      self.target_l4_flat = tf.reshape(self.target_l3, [-1, reduce(lambda x, y: x * y, shape[1:])])
+      self.target_l3_flat = tf.reshape(self.target_l3, [-1, reduce(lambda x, y: x * y, shape[1:])])
 
-      self.target_l4, self.t_w['l4_w'], self.t_w['l4_b'] = linear(self.target_l4_flat, 512, activation_fn=activation_fn, name='target_l4')
+      self.t_value_hid, self.t_w['l4_val_w'], self.t_w['l4_val_b'] = linear(self.target_l3_flat, 512, activation_fn=activation_fn, name='target_value_hid')
 
-      self.target_l5, self.t_w['l5_w'], self.t_w['l5_b'] = linear(self.target_l4, 512, activation_fn=activation_fn, name='target_l5')
+      self.t_adv_hid, self.t_w['l4_adv_w'], self.t_w['l4_adv_b'] = linear(self.target_l3_flat, 512, activation_fn=activation_fn, name='target_adv_hid')
 
-      self.target_q, self.t_w['q_w'], self.t_w['q_b'] = linear(self.target_l5, self.env.action_size, name='target_q')
+      self.t_value, self.t_w['val_w_out'], self.t_w['val_w_b'] = linear(self.t_value_hid, 1, name='target_value_out')
+
+      self.t_advantage, self.t_w['adv_w_out'], self.t_w['adv_w_b'] = linear(self.t_adv_hid, self.env.action_size, name='target_adv_out')
+
+      # Average Dueling
+      self.target_q = self.t_value + (self.t_advantage - tf.reduce_mean(self.t_advantage, reduction_indices=1, keep_dims=True))
 
       self.target_q_idx = tf.placeholder('int32', [None, None], 'outputs_idx')
       self.target_q_with_idx = tf.gather_nd(self.target_q, self.target_q_idx)
@@ -293,11 +310,11 @@ class Agent(BaseModel):
       self.loss = tf.reduce_mean(clipped_error(self.delta), name='loss')
       self.learning_rate_step = tf.placeholder('int64', None, name='learning_rate_step')
       
-      exponential_decay = tf.train.exponential_decay(self.learning_rate, self.learning_rate_step, self.learning_rate_decay_step, self.learning_rate_decay, staircase=True)
+      exponential_decay = tf.train.exponential_decay(self.learning_rate, self.learning_rate_step, self.learning_rate_decay_step, self.learning_rate_decay, staircase=False)
       self.learning_rate_op = tf.maximum(self.learning_rate_minimum, exponential_decay, name='learning_rate_exponential_decay')
 
-      # self.optim = tf.train.RMSPropOptimizer(self.learning_rate_op, momentum=0.95, epsilon=0.01).minimize(self.loss)
-      self.optim = tf.train.AdamOptimizer(self.learning_rate_op, epsilon=0.01, name='Adam_optim').minimize(self.loss)
+      self.optim = tf.train.RMSPropOptimizer(self.learning_rate_op, momentum=0.95, epsilon=0.01).minimize(self.loss)
+      # self.optim = tf.train.AdamOptimizer(self.learning_rate_op, beta1=0.9, beta2=0.999, epsilon=1e-8, name='Adam_optim').minimize(self.loss)
 
     with tf.variable_scope('summary'):
       scalar_summary_tags = ['average.reward', 'average.loss', 'average.q', 'episode.max_reward', 'episode.min_reward', 'episode.avg_reward', 'episode.num_of_game', 'training.learning_rate']
@@ -325,7 +342,7 @@ class Agent(BaseModel):
     self.update_target_q_network()
 
   def update_target_q_network(self):
-    print('[*] Updating target network...')
+    print(" [*] Updating target network...")
     for name in self.w.keys():
       self.t_w_assign_op[name].eval({self.t_w_input[name]: self.w[name].eval()})
 
@@ -351,6 +368,7 @@ class Agent(BaseModel):
     self.update_target_q_network()
 
   def inject_summary(self, tag_dict, step):
+    print(" [*] Updating summary...")
     summary_str_lists = self.sess.run([self.summary_ops[tag] for tag in tag_dict.keys()], {
       self.summary_placeholders[tag]: value for tag, value in tag_dict.items()
     })
@@ -368,6 +386,8 @@ class Agent(BaseModel):
 
     self.env.env.reset()
 
+    per_game_scores = []
+
     for idx in xrange(n_episode):
       screen, reward, action, terminal = self.env.new_random_game()
       current_reward = 0
@@ -375,7 +395,7 @@ class Agent(BaseModel):
       for _ in range(self.history_length):
         test_history.add(screen)
 
-      for t in xrange(n_episode):
+      for _ in xrange(9999999):
 
         action = self.predict(test_history.get(), test_ep)
 
@@ -386,15 +406,14 @@ class Agent(BaseModel):
         current_reward += reward
 
         if terminal:
+          per_game_scores.append(current_reward)
           break
 
       if current_reward > best_reward:
         best_reward = current_reward
         best_idx = idx
 
-      print "="*30
-      print " [%d][%d] Best reward : %d, current reward %d" % (idx, best_idx, best_reward, current_reward)
-      print "="*30
+      print " [%d][%d] Best reward : %d, current reward %d, mean reward %d" % (idx, best_idx, best_reward, current_reward, np.mean(per_game_scores))
 
-    if best_reward > 5500:
-      self.env.upload_game_session()
+    # if best_reward > 13000:
+    #   self.env.upload_game_session()

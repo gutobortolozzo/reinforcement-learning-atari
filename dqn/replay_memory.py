@@ -15,6 +15,7 @@ class ReplayMemory:
 
     self.memory_size = config.memory_size
     self.actions = np.empty(self.memory_size, dtype = np.uint8)
+    self.errors = np.empty(self.memory_size, dtype = np.uint8)
     self.rewards = np.empty(self.memory_size, dtype = np.integer)
     self.screens = np.empty((self.memory_size, config.screen_height, config.screen_width), dtype = np.float16)
     self.terminals = np.empty(self.memory_size, dtype = np.bool)
@@ -29,8 +30,9 @@ class ReplayMemory:
     self.prestates = np.empty((self.batch_size, self.history_length) + self.dims, dtype = np.float16)
     self.poststates = np.empty((self.batch_size, self.history_length) + self.dims, dtype = np.float16)
 
-  def add(self, screen, reward, action, terminal):
+  def add(self, screen, reward, action, terminal, error):
     assert screen.shape == self.dims
+    self.errors[self.current] = self._getPriority(error)
     self.actions[self.current] = action
     self.rewards[self.current] = reward
     self.screens[self.current, ...] = screen
@@ -51,24 +53,25 @@ class ReplayMemory:
   def _getPriority(self, error):
     return (abs(error) + self.e) ** self.a
 
-  def sample(self):
+  def sample(self, error):
     
-    if self.worst_reward == None and self.best_reward == None:
-      self.worst_reward = np.amin(self.rewards)
-      self.best_reward = np.amax(self.rewards)
+    # if self.worst_reward == None and self.best_reward == None:
+    #   self.worst_reward = np.amin(self.rewards)
+    #   self.best_reward = np.amax(self.rewards)
 
-    chosen = random.randint(self.worst_reward, self.best_reward)
+    # chosen = random.randint(self.worst_reward, self.best_reward)
+    # chosen = random.randint(self.worst_reward, self.worst_reward)
 
-    count = self.count
+    # count = self.count
 
-    if count <= self.batch_size * self.history_length:
-      count = 1000
+    # if count <= self.batch_size * self.history_length:
+    #   count = 1000
 
-    index = random.randint(self.history_length, count - self.batch_size)
+    index = random.randint(self.history_length, self.count - self.batch_size)
 
     for i in xrange(self.batch_size / self.history_length):
 
-      if self.rewards[index] == chosen:
+      if self.errors[index] < error:
         break
 
       index = random.randint(self.batch_size, self.count - self.batch_size)
